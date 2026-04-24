@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminShell } from "../../components/admin/admin-shell";
 import { PageTransition } from "../../components/page-transition";
@@ -41,7 +41,7 @@ const isAttendanceStatus = (value: unknown): value is AttendanceStatus =>
 const toNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-export default function AdminAttendancePage() {
+function AdminAttendancePageContent() {
   const params = useSearchParams();
   const sessionIdParam = params.get("sessionId");
   const [mode, setMode] = useState<"qr" | "manual">("qr");
@@ -382,6 +382,14 @@ export default function AdminAttendancePage() {
         </div>
       </PageTransition>
     </AdminShell>
+  );
+}
+
+export default function AdminAttendancePage() {
+  return (
+    <Suspense fallback={<AdminShell><div className="p-6" /></AdminShell>}>
+      <AdminAttendancePageContent />
+    </Suspense>
   );
 }
 

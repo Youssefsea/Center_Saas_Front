@@ -3,10 +3,12 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ["res.cloudinary.com"],
-  },
-  experimental: {
-    missingSuspenseWithCSRBailout: false, // ← يتجاهل الـ Suspense error
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+      },
+    ],
   },
 };
 
