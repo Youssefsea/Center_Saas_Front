@@ -54,7 +54,7 @@ export const ERRORS = {
 
 // API base
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005";
+  process.env.NEXT_PUBLIC_API_URL || "https://senter-saas-backend.vercel.app";
 
 // App-specific constants
 export const gradeLevels = [
