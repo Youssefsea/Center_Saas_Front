@@ -33,14 +33,20 @@ type AttendanceEntry = {
   time?: string | null;
 };
 
+type AttendanceStatus = AttendanceEntry["status"];
+
+const isAttendanceStatus = (value: unknown): value is AttendanceStatus =>
+  value === "attended" || value === "no_show" || value === "cancelled";
+
+const toNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
 export default function AdminAttendancePage() {
   const params = useSearchParams();
   const sessionIdParam = params.get("sessionId");
   const [mode, setMode] = useState<"qr" | "manual">("qr");
   const [sessions, setSessions] = useState<SessionItem[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
-    sessionIdParam
-  );
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [stats, setStats] = useState({ total: 0, attended: 0, noShow: 0, cancelled: 0 });
@@ -52,6 +58,10 @@ export default function AdminAttendancePage() {
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
+    setSelectedSessionId(sessionIdParam);
+  }, [sessionIdParam]);
+
+  useEffect(() => {
     let active = true;
     const controller = new AbortController();
     const fetchSessions = async () => {
@@ -60,14 +70,22 @@ export default function AdminAttendancePage() {
           signal: controller.signal,
         });
         if (!active) return;
-        const items = response.data?.sessions ?? response.data ?? [];
+        const rawItems = response.data?.sessions ?? response.data ?? [];
+        const items = Array.isArray(rawItems) ? rawItems : [];
         const today = items
           .map(mapSession)
           .filter((session) => isToday(session.scheduledAt));
         setSessions(today);
-        if (!selectedSessionId && today.length === 1) {
-          setSelectedSessionId(today[0].id);
-        }
+        setSelectedSessionId((previous) => {
+          if (sessionIdParam && today.some((session) => session.id === sessionIdParam)) {
+            return sessionIdParam;
+          }
+          if (previous && today.some((session) => session.id === previous)) {
+            return previous;
+          }
+          if (today.length === 1) return today[0].id;
+          return null;
+        });
       } catch (error) {
         if (controller.signal.aborted) return;
         const normalized = normalizeApiError(error);
@@ -79,7 +97,7 @@ export default function AdminAttendancePage() {
       active = false;
       controller.abort();
     };
-  }, [selectedSessionId]);
+  }, [sessionIdParam]);
 
   const fetchAttendance = useCallback(
     async (signal?: AbortSignal) => {
@@ -90,18 +108,18 @@ export default function AdminAttendancePage() {
           { signal }
         );
         const data = response.data ?? {};
-        const items = data.attendance ?? data.students ?? data ?? [];
-        setAttendance(items.map(mapAttendance));
+        const rawItems = data.attendance ?? data.students ?? data ?? [];
+        const items = Array.isArray(rawItems) ? rawItems : [];
+        const mappedItems = items.map(mapAttendance);
+        setAttendance(mappedItems);
+        const attendedFallback = mappedItems.filter((item) => item.status === "attended").length;
+        const noShowFallback = mappedItems.filter((item) => item.status === "no_show").length;
+        const cancelledFallback = mappedItems.filter((item) => item.status === "cancelled").length;
         setStats({
-          total: data.total ?? items.length,
-          attended:
-            data.attended ??
-            items.filter((i: any) => i.status === "attended").length,
-          noShow:
-            data.no_show ?? items.filter((i: any) => i.status === "no_show").length,
-          cancelled:
-            data.cancelled ??
-            items.filter((i: any) => i.status === "cancelled").length,
+          total: toNumber(data.total) ?? mappedItems.length,
+          attended: toNumber(data.attended) ?? attendedFallback,
+          noShow: toNumber(data.no_show) ?? noShowFallback,
+          cancelled: toNumber(data.cancelled) ?? cancelledFallback,
         });
       } catch (error) {
         if (signal?.aborted) return;
@@ -156,10 +174,11 @@ export default function AdminAttendancePage() {
         message: "سجّل حضوره ✓",
         detail: `${selectedSession?.subject ?? ""} · ${formatArabicTime(new Date())}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const normalized = normalizeApiError(error);
-      const code = error?.response?.data?.error?.code ?? normalized.code;
-      const meta = error?.response?.data?.meta ?? {};
+      const responseData = (error as { response?: { data?: { error?: { code?: string }; meta?: { minutesUntilStart?: number; minutesAfterEnd?: number } } } })?.response?.data;
+      const code = responseData?.error?.code ?? normalized.code;
+      const meta = responseData?.meta ?? {};
       let message = normalized.message;
       if (code === "NOT_FOUND") message = "الـ QR ده مش صح";
       if (code === "ALREADY_ATTENDED") message = "الطالب ده سجّل حضوره بالفعل ✓";
@@ -369,6 +388,7 @@ export default function AdminAttendancePage() {
 function isToday(date: string) {
   const now = new Date();
   const target = new Date(date);
+  if (Number.isNaN(target.getTime())) return false;
   return (
     now.getFullYear() === target.getFullYear() &&
     now.getMonth() === target.getMonth() &&
@@ -376,21 +396,28 @@ function isToday(date: string) {
   );
 }
 
-function mapSession(item: any): SessionItem {
+function mapSession(item: Record<string, unknown>): SessionItem {
+  const rawDate = item.scheduled_at ?? item.scheduledAt ?? item.date ?? new Date().toISOString();
+  const parsedDate = new Date(String(rawDate));
+  const scheduledAt = Number.isNaN(parsedDate.getTime())
+    ? new Date().toISOString()
+    : parsedDate.toISOString();
   return {
-    id: item.id ?? item._id,
-    subject: item.subject ?? "",
-    gradeLevel: item.gradeLevel ?? item.grade_level ?? "",
-    scheduledAt: item.scheduled_at ?? item.scheduledAt ?? item.date ?? new Date(),
-    capacity: item.capacity ?? item.totalSeats ?? 0,
+    id: String(item.id ?? item._id ?? ""),
+    subject: String(item.subject ?? ""),
+    gradeLevel: String(item.gradeLevel ?? item.grade_level ?? ""),
+    scheduledAt,
+    capacity: toNumber(item.capacity) ?? toNumber(item.totalSeats) ?? 0,
   };
 }
 
-function mapAttendance(item: any): AttendanceEntry {
+function mapAttendance(item: Record<string, unknown>): AttendanceEntry {
+  const statusValue = item.status;
+  const status = isAttendanceStatus(statusValue) ? statusValue : "attended";
   return {
-    id: item.id ?? item._id,
-    name: item.name ?? item.full_name ?? "طالب",
-    status: item.status ?? "attended",
-    time: item.attended_at ? formatArabicTime(item.attended_at) : null,
+    id: String(item.id ?? item._id ?? ""),
+    name: String(item.name ?? item.full_name ?? "طالب"),
+    status,
+    time: item.attended_at ? formatArabicTime(String(item.attended_at)) : null,
   };
 }
