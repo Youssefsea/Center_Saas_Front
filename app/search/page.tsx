@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -38,7 +39,7 @@ type TeacherResult = {
   reviewsCount?: number | null;
 };
 
-export default function SearchPage() {
+function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<string | null>(null);
@@ -311,6 +312,14 @@ export default function SearchPage() {
         </div>
       )}
     </PageTransition>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[40vh]" />}>
+      <SearchPageContent />
+    </Suspense>
   );
 }
 

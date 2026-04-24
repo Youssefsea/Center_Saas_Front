@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TeacherShell } from "../../components/teacher/teacher-shell";
 import { PageTransition } from "../../components/page-transition";
@@ -20,7 +20,7 @@ import { api, normalizeApiError } from "../../lib/api";
 
 type CenterItem = CenterSelectorItem;
 
-export default function TeacherContentPage() {
+function TeacherContentPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [centers, setCenters] = useState<CenterItem[]>([]);
@@ -303,6 +303,14 @@ export default function TeacherContentPage() {
         )}
       </PageTransition>
     </TeacherShell>
+  );
+}
+
+export default function TeacherContentPage() {
+  return (
+    <Suspense fallback={<TeacherShell><div className="p-6" /></TeacherShell>}>
+      <TeacherContentPageContent />
+    </Suspense>
   );
 }
 

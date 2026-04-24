@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { z } from "zod";
@@ -149,7 +149,7 @@ const roleLabels: Record<string, string> = {
   center_admin: "مركز تعليمي",
 };
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth();
@@ -751,5 +751,13 @@ export default function RegisterPage() {
         </div>
       </PageTransition>
     </PublicOnlyRoute>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[40vh]" />}>
+      <RegisterPageContent />
+    </Suspense>
   );
 }

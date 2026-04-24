@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, MouseEvent, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { TeacherShell } from "../../components/teacher/teacher-shell";
 import { PageTransition } from "../../components/page-transition";
@@ -27,7 +27,7 @@ const statusTabs = [
   { value: "cancelled", label: "ملغية" },
 ];
 
-export default function TeacherSessionsPage() {
+function TeacherSessionsPageContent() {
   const searchParams = useSearchParams();
   const [centers, setCenters] = useState<CenterOption[]>([]);
   const [sessions, setSessions] = useState<TeacherSession[]>([]);
@@ -213,6 +213,14 @@ export default function TeacherSessionsPage() {
         </section>
       </PageTransition>
     </TeacherShell>
+  );
+}
+
+export default function TeacherSessionsPage() {
+  return (
+    <Suspense fallback={<TeacherShell><div className="p-6" /></TeacherShell>}>
+      <TeacherSessionsPageContent />
+    </Suspense>
   );
 }
 
