@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "../../components/admin/admin-shell";
 import { PageTransition } from "../../components/page-transition";
 import { ErrorToast } from "../../components/error-toast";
@@ -8,7 +8,7 @@ import { ConfirmModal } from "../../components/admin/confirm-modal";
 import { api, normalizeApiError } from "../../lib/api";
 import { TeachersHeader } from "./TeachersHeader";
 import { TeachersList } from "./TeachersList";
-import { TeacherSearchModal } from "./TeacherSearchModal";
+import { TeacherSearchModal, LookupResult } from "./TeacherSearchModal";
 
 type TeacherItem = {
   id: string;
@@ -22,35 +22,32 @@ type TeacherItem = {
   upcomingSessions?: number;
 };
 
-type SearchTeacher = {
-  id: string;
-  name: string;
-  subjects: string[];
-  rating: number;
-};
-
 export default function AdminTeachersPage() {
   const [teachers, setTeachers] = useState<TeacherItem[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchTeacher[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [addTarget, setAddTarget] = useState<SearchTeacher | null>(null);
+
+  // Lookup state
+  const [teacherId, setTeacherId] = useState("");
+  const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  // Action targets
+  const [addTarget, setAddTarget] = useState<LookupResult | null>(null);
   const [removeTarget, setRemoveTarget] = useState<TeacherItem | null>(null);
 
+  // ── Fetch teachers ──────────────────────────────────────────
   const fetchTeachers = useCallback((signal?: AbortSignal) => {
     api
       .get("/centers/teachers", { signal })
       .then((response) => {
         const items = response.data?.teachers ?? response.data ?? [];
-        console.log("Fetched teachers:", items);
         setTeachers(items.map(mapTeacher));
       })
       .catch((error) => {
         if (signal?.aborted) return;
-        const normalized = normalizeApiError(error);
-        setToast(normalized.message);
+        setToast(normalizeApiError(error).message);
       });
   }, []);
 
@@ -60,36 +57,37 @@ export default function AdminTeachersPage() {
     return () => controller.abort();
   }, [fetchTeachers]);
 
-  const teacherIds = useMemo(() => new Set(teachers.map((t) => t.id)), [teachers]);
+  // ── Lookup by ID ────────────────────────────────────────────
+  const runLookup = useCallback(() => {
+    if (!teacherId.trim()) return;
+    setLooking(true);
+    setLookupResult(null);
+    setLookupError(null);
 
-  const runSearch = useCallback(() => {
-    if (!searchQuery) return;
-    setSearching(true);
     api
-      .get("/discovery/teachers/search", {
-        params: { name: searchQuery },
-      })
+      .get(`/centers/teachers/lookup/${encodeURIComponent(teacherId.trim())}`)
       .then((response) => {
-        const items = response.data?.teachers ?? response.data ?? [];
-        console.log("item",items)
-        const filtered = items
-          .map((teacher: any) => ({
-            id: teacher.teacher_id?? teacher._id,
-            name: teacher.teacher_name ??"مدرس",
-            subjects: teacher.subjects ?? [],
-            rating: teacher.rating ?? 0,
-          }))
-          .filter((teacher: SearchTeacher) => !teacherIds.has(teacher.id));
-          // console.log("Search results:", filtered);
-        setSearchResults(filtered);
+        const { teacher, already_in_center } = response.data;
+        setLookupResult({
+          id: teacher.teacher_id,
+          name: teacher.teacher_name ?? "مدرس",
+          subjects: teacher.subjects ?? [],
+          rating: Number(teacher.rating) ?? 0,
+          alreadyInCenter: already_in_center,
+        });
       })
       .catch((error) => {
         const normalized = normalizeApiError(error);
-        setToast(normalized.message);
+        setLookupError(
+          normalized.status === 404
+            ? "مفيش مدرس بالـ ID ده"
+            : normalized.message
+        );
       })
-      .finally(() => setSearching(false));
-  }, [searchQuery, teacherIds]);
+      .finally(() => setLooking(false));
+  }, [teacherId]);
 
+  // ── Add teacher ─────────────────────────────────────────────
   const handleAdd = useCallback(() => {
     if (!addTarget) return;
     api
@@ -97,20 +95,20 @@ export default function AdminTeachersPage() {
       .then(() => {
         setToast("اتضاف المدرس للمركز ✓");
         setAddTarget(null);
+        setSearchModalOpen(false);
+        setTeacherId("");
+        setLookupResult(null);
         fetchTeachers();
       })
       .catch((error) => {
         const normalized = normalizeApiError(error);
-        if (normalized.status === 404) {
-          setToast("المدرس ده مش موجود");
-        } else if (normalized.status === 400) {
-          setToast("المدرس ده مضاف بالفعل");
-        } else {
-          setToast(normalized.message);
-        }
+        if (normalized.status === 404) setToast("المدرس ده مش موجود");
+        else if (normalized.status === 400) setToast("المدرس ده مضاف بالفعل");
+        else setToast(normalized.message);
       });
   }, [addTarget, fetchTeachers]);
 
+  // ── Remove teacher ──────────────────────────────────────────
   const handleRemove = useCallback(() => {
     if (!removeTarget) return;
     if (removeTarget.upcomingSessions && removeTarget.upcomingSessions > 0) {
@@ -123,42 +121,59 @@ export default function AdminTeachersPage() {
       .then(() => {
         setToast("تم إزالة المدرس من المركز");
         setRemoveTarget(null);
-        setTeachers((prev) => prev.filter((teacher) => teacher.id !== removeTarget.id));
+        setTeachers((prev) => prev.filter((t) => t.id !== removeTarget.id));
       })
       .catch((error) => {
         const normalized = normalizeApiError(error);
-        if (normalized.message.includes("حصص")) {
-          setToast("المدرس ده عنده حصص جاية، مش هتقدر تشيله");
-        } else {
-          setToast(normalized.message);
-        }
+        setToast(
+          normalized.message.includes("حصص")
+            ? "المدرس ده عنده حصص جاية، مش هتقدر تشيله"
+            : normalized.message
+        );
       });
   }, [removeTarget]);
 
+  // ── Handlers ────────────────────────────────────────────────
   const handleToastClose = useCallback(() => setToast(null), []);
+
   const handleOpenSearch = useCallback(() => setSearchModalOpen(true), []);
-  const handleCloseSearch = useCallback(() => setSearchModalOpen(false), []);
-  const handleSearchChange = useCallback((value: string) => setSearchQuery(value), []);
-  const handleAddTarget = useCallback((teacher: SearchTeacher) => setAddTarget(teacher), []);
+
+  const handleCloseSearch = useCallback(() => {
+    setSearchModalOpen(false);
+    setTeacherId("");
+    setLookupResult(null);
+    setLookupError(null);
+  }, []);
+
+  const handleIdChange = useCallback((value: string) => {
+    setTeacherId(value);
+    // Reset result on each keystroke
+    setLookupResult(null);
+    setLookupError(null);
+  }, []);
+
+  const handleAddTarget = useCallback((teacher: LookupResult) => setAddTarget(teacher), []);
   const handleRemoveTarget = useCallback((teacher: TeacherItem) => setRemoveTarget(teacher), []);
   const handleAddCancel = useCallback(() => setAddTarget(null), []);
   const handleRemoveCancel = useCallback(() => setRemoveTarget(null), []);
-
 
   return (
     <AdminShell>
       <PageTransition>
         {toast && <ErrorToast message={toast} onClose={handleToastClose} />}
+
         <TeachersHeader onAdd={handleOpenSearch} />
         <TeachersList teachers={teachers} onRemove={handleRemoveTarget} />
+
         <TeacherSearchModal
           open={searchModalOpen}
-          searchQuery={searchQuery}
-          searching={searching}
-          results={searchResults}
-          onSearch={runSearch}
+          teacherId={teacherId}
+          looking={looking}
+          lookupResult={lookupResult}
+          lookupError={lookupError}
+          onLookup={runLookup}
           onClose={handleCloseSearch}
-          onQueryChange={handleSearchChange}
+          onIdChange={handleIdChange}
           onAdd={handleAddTarget}
         />
 
@@ -188,37 +203,16 @@ export default function AdminTeachersPage() {
   );
 }
 
-// {
-//     "success": true,
-//     "teachers": [
-//         {
-//             "teacher_id": "18c03629-2523-4f19-b184-4c231b0d1315",
-//             "teacher_name": "mohamed salah",
-//             "avatar_url": null,
-//             "subjects": [
-//                 "عربي"
-//             ],
-//             "grade_levels": [
-//                 "ثانوي أولى",
-//                 "ثانوي تانية",
-//                 "ثانوي تالتة"
-//             ],
-//             "rating": "0.0",
-//             "total_reviews": 0
-//         }
-//     ]
-// }
-
 function mapTeacher(item: any): TeacherItem {
   return {
     id: item.id ?? "",
     name: item.user_name ?? "مدرس",
     bio: item.bio ?? null,
     subjects: item.subjects ?? [],
-    gradeLevels: item.gradeLevels ?? [],
-    rating: item.rating ?? 0,
-    reviewsCount: item.total_reviews?? 0,
+    gradeLevels: item.grade_levels ?? item.gradeLevels ?? [],
+    rating: Number(item.rating) ?? 0,
+    reviewsCount: item.total_reviews ?? 0,
     sessionsCount: item.sessionscount ?? 0,
-    upcomingSessions: item.upcomingSessions ?? item.upcoming_sessions ?? 0,
+    upcomingSessions: item.upcomingsessions ?? item.upcomingSessions ?? 0,
   };
 }
