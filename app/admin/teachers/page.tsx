@@ -65,7 +65,7 @@ export default function AdminTeachersPage() {
     setLookupError(null);
 
     api
-      .get(`/centers/teachers/lookup/${encodeURIComponent(teacherId.trim())}`)
+      .get(`/discovery/centers/teachers/${encodeURIComponent(teacherId.trim())}`)
       .then((response) => {
         const { teacher, already_in_center } = response.data;
         setLookupResult({
