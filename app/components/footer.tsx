@@ -21,23 +21,14 @@ export function Footer() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 text-sm text-slate-600">
-          <Link href="/about" className="hover:text-primary">
-            عن المنصة
-          </Link>
-          <Link href="/contact" className="hover:text-primary">
-            تواصل معنا
-          </Link>
-        </div>
+      
 
         <div className="flex flex-col gap-3 text-sm text-slate-600">
           <div className="flex items-center gap-3">
             <span>🌐</span>
-            <span className="font-english" dir="ltr">
-              Facebook · Instagram · X
-            </span>
+        
           </div>
-          <span className="text-xs text-muted">جميع الحقوق محفوظة 2025</span>
+          <span className="text-xs text-muted">جميع الحقوق محفوظة 2026</span>
         </div>
       </div>
     </footer>
