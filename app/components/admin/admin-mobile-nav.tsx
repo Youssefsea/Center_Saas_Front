@@ -9,7 +9,7 @@ const items = [
   { href: "/admin/teachers", icon: "👨‍🏫", label: "المدرسين" },
   { href: "/admin/attendance", icon: "📷", label: "الحضور" },
   { href: "/admin/rooms", icon: "🚪", label: "الـ Rooms" },
-  {href:"/admin/settings",icon:"",label:"اعدادات"}
+  {href:"/admin/settings",icon:"⚙️",label:"اعدادات"}
 ];
 
 export function AdminMobileNav() {
